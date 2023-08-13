@@ -72,7 +72,7 @@ dependencies:
 - conduit
 - conduit-extra
 - containers
-- cryptonite
+- crypton
 - directory
 - echo
 - exceptions

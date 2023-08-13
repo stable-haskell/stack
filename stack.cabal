@@ -344,7 +344,7 @@ library
     , conduit
     , conduit-extra
     , containers
-    , cryptonite
+    , crypton
     , directory
     , echo
     , exceptions
@@ -461,7 +461,7 @@ executable stack
     , conduit
     , conduit-extra
     , containers
-    , cryptonite
+    , crypton
     , directory
     , echo
     , exceptions
@@ -557,7 +557,7 @@ executable stack-integration-test
     , conduit
     , conduit-extra
     , containers
-    , cryptonite
+    , crypton
     , directory
     , echo
     , exceptions
@@ -669,7 +669,7 @@ test-suite stack-test
     , conduit
     , conduit-extra
     , containers
-    , cryptonite
+    , crypton
     , directory
     , echo
     , exceptions

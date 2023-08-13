@@ -1,0 +1,109 @@
+# This is an experimental project-level configuration, to see if Stack can be
+# built with GHC 9.8.0.20230809.
+
+resolver: nightly-2023-08-12 # GHC 9.6.2
+compiler: ghc-9.8.0.20230809
+
+extra-deps:
+# aeson-2.2.0.0
+- github: haskell/aeson
+  # Pull request #1055
+  commit: d79464b0e1b3f1796325528ec253bb05685acf5c
+  subdirs:
+  - .
+  - attoparsec-aeson
+
+- github: stevenfontanella/microlens
+  # Pull request #171
+  commit: 70a999078cf76c4999aa2eafe9dd10080635642b
+  subdirs:
+  - microlens-th
+
+- github: nikita-volkov/neat-interpolation
+  # Pull request #35
+  commit: 106d8d1b9a909a3e6a588baf177553b8ff7c3d37
+
+- pantry-0.9.1@sha256:69058b32be71d0fbc51727ddd677eb6429657c2c1cebbd9802e6b4f8a5eda51c,7530
+
+- github: yesodweb/persistent
+  # Pull request #1513
+  commit: 0795e6431493beb8468eb3984591fac6249e8891
+  subdirs:
+  - persistent
+
+- text-iso8601-0.1@sha256:fc10d8de72fc094d0d299644f17421b9430d1c1092a1355c7f0c02d8b6edf6a7,2371
+- th-abstraction-0.6.0.0@sha256:3ca7abbcfd7030233a79f5ab9579cdf9d96e2b79455e38b2492fad4df4efd152,2236
+
+allow-newer: true
+allow-newer-deps:
+# Upper bounds exclude base-4.19.0.0
+- OneTuple
+- assoc
+- async
+- cryptohash-sha256
+- generically
+- http-api-data
+- indexed-traversable
+- indexed-traversable-instances
+- integer-conversion
+- lukko
+- semialign
+- tar
+- unliftio-core
+- vault
+# Upper bounds exclude deepseq-1.5.0.0
+- bitvec
+- dlist
+- http-client
+- megaparsec
+- network-uri
+- safe-exceptions
+- strict
+# Upper bounds exclude base-4.19.0.0 and deepseq-1.5.0.0
+- data-fix
+- hashable
+- primitive
+- splitmix
+- these
+- time-compat
+# Upper bounds exclude base-4.19.0.0 and ghc-prim-0.11.0
+- integer-logarithms
+# Upper bounds exclude base-4.19.0.0, deepseq-1.5.0.0, ghc-prim-0.11.0 and template-haskell-2.21.0.0
+- text-short
+# Upper bounds exclude ghc-prim-0.11.0, th-abstraction-0.6.0.0 and template-haskell-2.21.0.0
+- aeson
+# Upper bounds exclude base-4.19.0.0, deepseq-1.5.0.0 and template-haskell-2.21.0.0
+- scientific
+# Upper bounds exclude deepseq-1.5.0.0 and template-haskell-2.21.0.0
+- tagged
+- uuid-types
+# Upper bounds exclude base-4.19.0.0 and template-haskell-2.21.0.0
+- hackage-security
+# Upper bounds exclude template-haskell-2.21.0.0
+- unordered-containers
+# Upper bounds exclude ghc-prim-0.11.0
+- attoparsec
+- ed25519
+# Upper bounds exclude Cabal-3.11.0.0
+- hpack
+- pantry
+
+drop-packages:
+# See https://github.com/commercialhaskell/stack/pull/4712
+- cabal-install
+
+docker:
+  enable: false
+  repo: fpco/alpine-haskell-stack:8.10.4
+
+nix:
+  # --nix on the command-line to enable.
+  packages:
+  - zlib
+  - unzip
+
+flags:
+  hackage-security:
+    cabal-syntax: true
+  stack:
+    developer-mode: true
