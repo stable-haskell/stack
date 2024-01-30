@@ -244,7 +244,7 @@ initProject currDir initOpts mresolver = do
         let absDir = parent fp
         in  ResolvedPath (RelFilePath $ T.pack $ makeRelDir absDir) absDir
       pkgDirs = Map.map (fpToPkgDir . fst) bundle
-  (snapshotLoc, flags, extraDeps, rbundle) <-
+  (snapshot, flags, extraDeps, rbundle) <-
     getDefaultResolver initOpts mresolver pkgDirs
   let ignored = Map.difference bundle rbundle
       dupPkgMsg
@@ -286,7 +286,7 @@ initProject currDir initOpts mresolver = do
         , packages = resolvedRelative <$> Map.elems rbundle
         , extraDeps = map toRawPL deps
         , flagsByPkg = removeSrcPkgDefaultFlags gpds flags
-        , resolver = snapshotLoc
+        , snapshot
         , compiler = Nothing
         , extraPackageDBs = []
         , curator = Nothing
@@ -296,7 +296,7 @@ initProject currDir initOpts mresolver = do
   prettyInfoL
     [ flow "Initialising Stack's project-level YAML configuration file \
            \using snapshot"
-    , pretty (PrettyRawSnapshotLocation snapshotLoc) <> "."
+    , pretty (PrettyRawSnapshotLocation snapshot) <> "."
     ]
   prettyInfoL $
     let n = Map.size bundle + length dupPkgs

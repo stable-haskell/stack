@@ -53,7 +53,7 @@ instance Pretty UpgradePrettyException where
     <> line
     <> fillSep
          [ "The"
-         , style Shell "--resolver"
+         , style Shell "--snapshot"
          , flow "option cannot be used with Stack's"
          , style Shell "upgrade"
          , "command."

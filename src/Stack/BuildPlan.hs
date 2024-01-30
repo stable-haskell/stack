@@ -73,7 +73,7 @@ instance Exception BuildPlanException where
   displayException (SnapshotNotFound snapName) = unlines
     [ "Error: [S-2045]"
     , "SnapshotNotFound " ++ snapName'
-    , "Non existing resolver: " ++ snapName' ++ "."
+    , "Non existing snapshot: " ++ snapName' ++ "."
     , "For a complete list of available snapshots see https://www.stackage.org/snapshots"
     ]
    where
@@ -150,7 +150,7 @@ instance Exception BuildPlanException where
     [ "Error: [S-8559]\n"
     , "Failed to load custom snapshot at "
     , T.unpack url
-    , ", because no 'compiler' or 'resolver' is specified."
+    , ", because no 'compiler' or 'snapshot' is specified."
     ]
   displayException DuplicatePackagesBug = bugReport "[S-5743]"
     "Duplicate packages are not expected here."

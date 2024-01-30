@@ -227,7 +227,7 @@ makeConcreteResolver ar = do
         let fp = implicitGlobalDir </> stackDotYaml
         iopc <- loadConfigYaml (parseProjectAndConfigMonoid (parent fp)) fp
         ProjectAndConfigMonoid project _ <- liftIO iopc
-        pure project.resolver
+        pure project.snapshot
       ARLatestNightly ->
         RSLSynonym . Nightly . (.nightly) <$> getSnapshots
       ARLatestLTSMajor x -> do
@@ -242,7 +242,7 @@ makeConcreteResolver ar = do
           else let (x, y) = IntMap.findMax snapshots.lts
                in  pure $ RSLSynonym $ LTS x y
   prettyInfoL
-    [ flow "Selected resolver:"
+    [ flow "Selected snapshot:"
     , style Current (fromString $ T.unpack $ textDisplay r) <> "."
     ]
   pure r
@@ -721,7 +721,10 @@ withBuildConfig inner = do
   -- deal with custom snapshot relative paths). We consider the current working
   -- directory to be the correct base. Let's calculate the mresolver first.
   mresolver <- forM config.resolver $ \aresolver -> do
-    logDebug ("Using resolver: " <> display aresolver <> " specified on command line")
+    logDebug $
+          "Using snapshot: "
+       <> display aresolver
+       <> " specified on command line"
     makeConcreteResolver aresolver
 
   (project', stackYaml) <- case config.project of
@@ -751,8 +754,8 @@ withBuildConfig inner = do
             case config.resolver of
               Nothing ->
                 logDebug $
-                     "Using resolver: "
-                  <> display project.resolver
+                     "Using snapshot: "
+                  <> display project.snapshot
                   <> " from implicit global project's config file: "
                   <> fromString dest'
               Just _ -> pure ()
@@ -787,11 +790,11 @@ withBuildConfig inner = do
   let project :: Project
       project = project'
         { Project.compiler = mcompiler <|> project'.compiler
-        , Project.resolver = fromMaybe project'.resolver mresolver
+        , Project.snapshot = fromMaybe project'.snapshot mresolver
         }
   extraPackageDBs <- mapM resolveDir' project.extraPackageDBs
 
-  smWanted <- lockCachedWanted stackYaml project.resolver $
+  smWanted <- lockCachedWanted stackYaml project.snapshot $
     fillProjectWanted stackYaml config project
 
   -- Unfortunately redoes getProjectWorkDir, since we don't have a BuildConfig
@@ -815,7 +818,7 @@ withBuildConfig inner = do
     -> [PackageIdentifierRevision]
     -> RIO Config Project
   getEmptyProject mresolver extraDeps = do
-    r <- case mresolver of
+    snapshot <- case mresolver of
       Just resolver -> do
         prettyInfoL
           [ flow "Using the snapshot"
@@ -835,7 +838,7 @@ withBuildConfig inner = do
       , packages = []
       , extraDeps = map (RPLImmutable . flip RPLIHackage Nothing) extraDeps
       , flagsByPkg = mempty
-      , resolver = r
+      , snapshot
       , compiler = Nothing
       , extraPackageDBs = []
       , curator = Nothing
@@ -930,7 +933,7 @@ fillProjectWanted stackYamlFP config project locCache snapCompiler snapPackages 
         { compiler = fromMaybe snapCompiler project.compiler
         , project = packages
         , deps = deps
-        , snapshotLocation = project.resolver
+        , snapshotLocation = project.snapshot
         }
 
   pure (wanted, catMaybes mcompleted)

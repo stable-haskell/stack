@@ -33,7 +33,7 @@ parseProjectAndConfigMonoid rootDir =
     let flagsByPkg = unCabalStringMap <$> unCabalStringMap
                 (flags' :: Map (CabalString PackageName) (Map (CabalString FlagName) Bool))
 
-    resolver' <- jsonSubWarnings $ o ...: ["snapshot", "resolver"]
+    snapshot' <- jsonSubWarnings $ o ...: ["snapshot", "resolver"]
     compiler <- o ..:? "compiler"
     userMsg <- o ..:? "user-message"
     config <- parseConfigMonoidObject rootDir o
@@ -45,10 +45,10 @@ parseProjectAndConfigMonoid rootDir =
       deps' <- mapM (resolvePaths (Just rootDir)) deps
       let extraDeps =
             concatMap toList (deps' :: [NonEmpty RawPackageLocation])
-      resolver <- resolvePaths (Just rootDir) resolver'
+      snapshot <- resolvePaths (Just rootDir) snapshot'
       let project = Project
             { userMsg
-            , resolver
+            , snapshot
             , compiler -- FIXME make sure resolver' isn't SLCompiler
             , extraPackageDBs
             , packages

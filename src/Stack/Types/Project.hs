@@ -27,7 +27,7 @@ data Project = Project
     -- of the snapshot.
   , flagsByPkg :: !(Map PackageName (Map FlagName Bool))
     -- ^ Flags to be applied on top of the snapshot flags.
-  , resolver :: !RawSnapshotLocation
+  , snapshot :: !RawSnapshotLocation
     -- ^ How we resolve which @Snapshot@ to use
   , compiler :: !(Maybe WantedCompiler)
     -- ^ Override the compiler in 'projectResolver'
@@ -54,7 +54,7 @@ instance ToJSON Project where
       | not (Map.null project.flagsByPkg)
       ]
     , ["packages" .= project.packages]
-    , ["snapshot" .= project.resolver]
+    , ["snapshot" .= project.snapshot]
     , maybe [] (\c -> ["curator" .= c]) project.curator
     , [ "drop-packages" .= Set.map CabalString project.dropPackages
       | not (Set.null project.dropPackages)
