@@ -1,20 +1,10 @@
 name: Integration tests
 
 on:
-  pull_request:
   push:
-    branches:
-    - master
-    - stable
-    - rc/**
     tags:
     - '**'
   workflow_dispatch:
-
-# Stack will use the value of the GH_TOKEN environment variable to authenticate
-# its requests of the GitHub REST API, providing a higher request rate limit.
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 # As of 1 February 2024, ubuntu-latest, windows-latest and macos-latest come
 # with Stack 2.13.1 and GHC 9.8.1. windows-latest comes with NSIS 3.08, for
@@ -159,79 +149,71 @@ jobs:
         name: ${{ runner.os }}-${{ runner.arch }}
         path: _release/stack-*
 
-  configuration:
-    name: Check for self-hosted runners
-    runs-on: ubuntu-latest
-    env:
-      CAN_SIGN: ${{ secrets.RELEASE_SIGNING_KEY != '' }}
-    outputs:
-      arm64-runner: ${{ steps.runners.outputs.arm64 }}
-      can-sign: ${{ env.CAN_SIGN }}
-      test-arm64: ${{ steps.runners.outputs.test-arm64 }}
-    steps:
-    - name: Check for hosted runners
-      id: runners
-      shell: bash
-      env:
-        SELF_HOSTED_RUNNERS: ${{ secrets.SELF_HOSTED_RUNNERS || (github.repository_owner == 'commercialhaskell' && 'arm64') }}
-      run: |
-        echo "runners=$SELF_HOSTED_RUNNERS" >> $GITHUB_OUTPUT
-        if echo "$SELF_HOSTED_RUNNERS" | grep -q 'arm64'; then
-          echo "arm64=['self-hosted', 'linux', 'ARM64']" >> $GITHUB_OUTPUT
-          echo "test-arm64=true" >> $GITHUB_OUTPUT
-        else
-          echo "arm64='ubuntu-latest'" >> $GITHUB_OUTPUT
-          echo "test-arm64=false" >> $GITHUB_OUTPUT
-        fi
-
   linux-arm64:
     name: Linux ARM64
-    runs-on: ${{ fromJSON(needs.configuration.outputs.arm64-runner) }}
-    needs: configuration
+    runs-on: [self-hosted, Linux, ARM64, maerwald]
     steps:
-    - name: Skipping ARM64
-      if: needs.configuration.outputs.test-arm64 == 'false'
-      shell: bash
-      run: |
-        echo '::notice title=ARM64 skipped::To build ARM64, a self-hosted runner needs to be configured and the SELF_HOSTED_RUNNERS secret must contain arm64'
-    - name: Clone project
-      if: needs.configuration.outputs.test-arm64 == 'true'
-      uses: actions/checkout@v4
-    - name: Install deps
-      shell: bash
-      run: |
-        set -ex
+      - name: git config
+        run: |
+          git config --global --get-all safe.directory | grep '^\*$' || git config --global --add safe.directory "*"
+        shell: bash
 
-        # As of 19 August 2023, the self-hosted runner comes with Stack 2.11.1,
-        # but it is not on the PATH. Logging the version for information.
-        /usr/local/bin/stack --version
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'true'
 
-        set +ex
-    - name: Build bindist
-      if: needs.configuration.outputs.test-arm64 == 'true'
-      shell: bash
-      run: |
-        # Stack's project-level configuration (stack.yaml) specifies the
-        # multi-architecture (including Linux/Aarch64) Docker image published by
-        # Oliver Benz (@benz0li, on GitHub). That image comes with Stack 2.11.1.
-        # (Note that the online documentation for '--docker-stack-exe image'
-        # specifies that the host Stack and image Stack must have the same
-        # version number.)
-        /usr/local/bin/stack etc/scripts/release.hs build --alpine --build-args --docker-stack-exe=image
+      - name: Run build (aarch64 linux)
+        run: |
+          export CI_PROJECT_DIR="${GITHUB_WORKSPACE}"
+          export GHCUP_INSTALL_BASE_PREFIX="$CI_PROJECT_DIR"
+          export GHCUP_BIN="$GHCUP_INSTALL_BASE_PREFIX/.ghcup/bin"
+          export PATH="$GHCUP_BIN:$PATH"
+          export CABAL_DIR="$CI_PROJECT_DIR/cabal"
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_NONINTERACTIVE=1 BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=yes sh
+          ghcup run --install --stack=latest -- stack --allow-different-user etc/scripts/release.hs build --allow-dirty --alpine --build-args --docker-stack-exe=image
 
-    - name: Upload bindist
-      if: needs.configuration.outputs.test-arm64 == 'true'
-      uses: actions/upload-artifact@v4
-      with:
-        name: Linux-ARM64
-        path: _release/stack-*
+      - name: Upload bindist
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-ARM64
+          path: _release/stack-*
+
+  freebsd-x64:
+    name: FreeBSD X64
+    runs-on: [self-hosted, FreeBSD, X64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'true'
+
+      - name: Run build
+        run: |
+          sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
+          pkg install -y ghc gcc curl git bash misc/compat10x misc/compat11x misc/compat12x gmake libiconv devel/stack
+          tzsetup Etc/GMT
+          adjkerntz -a
+          export CI_PROJECT_DIR="${GITHUB_WORKSPACE}"
+          export GHCUP_INSTALL_BASE_PREFIX="$CI_PROJECT_DIR"
+          export GHCUP_BIN="$GHCUP_INSTALL_BASE_PREFIX/.ghcup/bin"
+          export PATH="$GHCUP_BIN:$PATH"
+          export CABAL_DIR="$CI_PROJECT_DIR/cabal"
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_NONINTERACTIVE=1 BOOTSTRAP_HASKELL_ADJUST_CABAL_CONFIG=yes sh
+          stack etc/scripts/release.hs build --allow-dirty
+      - name: Upload bindist
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeBSD-X64
+          path: _release/stack-*
 
   github-release:
     name: Create GitHub release
     permissions:
       contents: write
     needs:
-    - configuration
     - integration-tests
     - linux-arm64
     runs-on: ubuntu-latest
@@ -258,27 +240,25 @@ jobs:
         name: Windows-X64
         path: _release
     - name: Download Linux/AArch64 artifact
-      if: needs.configuration.outputs.test-arm64 == 'true'
       uses: actions/download-artifact@v4
       with:
         name: Linux-ARM64
         path: _release
+    - name: Download FreeBSD/X64 artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: FreeBSD-X64
+        path: _release
     - name: Hash and sign assets
-      if: needs.configuration.outputs.can-sign == 'true'
       shell: bash
-      env:
-        RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
       run: |
         set -e
-        echo "$RELEASE_SIGNING_KEY"|gpg --import
         cd _release
         for asset in *; do
           shasum -a 256 "$asset" >"$asset.sha256"
-          gpg --digest-algo=sha512 --detach-sig --armor -u 0x575159689BEFB442 "$asset"
         done
     - name: Create GitHub release (final)
       id: github_release_final
-      if: "!startsWith(github.ref, 'refs/tags/rc/')"
       uses: ncipollo/release-action@v1.13.0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -295,19 +275,7 @@ jobs:
           [INSERT CONTRIBUTORS]
         draft: true
         prerelease: false
-    - name: Create GitHub release (release candidate)
-      id: github_release_rc
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: ncipollo/release-action@v1.13.0
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        body: |
-          **Changes since v[INSERT PREVIOUS VERSION]:**
 
-          [INSERT CHANGELOG]
-        draft: true
-        prerelease: true
     - name: Upload assets to GitHub release (final)
       if: "!startsWith(github.ref, 'refs/tags/rc/')"
       uses: xresloader/upload-to-github-release@v1
@@ -319,14 +287,4 @@ jobs:
         prerelease: false
         overwrite: true
         release_id: ${{ steps.github_release_final.outputs.id }}
-    - name: Upload assets to GitHub release (release candidate)
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: xresloader/upload-to-github-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        file: "_release/*"
-        draft: true
-        prerelease: true
-        overwrite: true
-        release_id: ${{ steps.github_release_rc.outputs.id }}
+
