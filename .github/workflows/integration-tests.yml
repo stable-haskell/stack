@@ -1,20 +1,10 @@
 name: Integration tests
 
 on:
-  pull_request:
   push:
-    branches:
-    - master
-    - stable
-    - rc/**
     tags:
     - '**'
   workflow_dispatch:
-
-# Stack will use the value of the GH_TOKEN environment variable to authenticate
-# its requests of the GitHub REST API, providing a higher request rate limit.
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 # As of 15 March 2025, ubuntu-latest and windows-latest come with Stack 3.3.1
 # and GHC 9.12.1. However, macos-13 and macos-latest do not come with Haskell
@@ -32,19 +22,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+        - os: ubuntu-22.04-arm
+          release-args: "--alpine --stack-args --docker-stack-exe=image"
+          cache-bust: "2025-02-07b"
         - os: ubuntu-latest
           release-args: "--alpine"
           cache-bust: "2024-05-17"
-        # On public preview since 16 January 2025
-        - os: ubuntu-24.04-arm
-          # Stack's project-level configuration (stack.yaml) specifies the
-          # multi-architecture (including Linux/Aarch64) Docker image published
-          # by Oliver Benz (@benz0li, on GitHub). That image comes with
-          # Stack 3.3.1. (Note that the online documentation for
-          # '--docker-stack-exe image' specifies that the host Stack and image
-          # Stack must have the same version number.)
-          release-args: "--alpine --stack-args --docker-stack-exe=image"
-          cache-bust: "2025-02-07b"
         - os: windows-latest
           release-args: ""
           cache-bust: "2024-05-17"
@@ -78,7 +61,7 @@ jobs:
       run: |
         set -ex
 
-        if [[ "${{ matrix.os }}" == "ubuntu-24.04-arm" || "${{ matrix.os }}" == "macos-13" || "${{ matrix.os }}" == "macos-latest" ]]
+        if [[ "${{ matrix.os }}" == "ubuntu-22.04-arm" || "${{ matrix.os }}" == "macos-13" || "${{ matrix.os }}" == "macos-latest" ]]
         then
           # ubuntu-24.04-arm, macos-13 and macos-latest do not include Haskell
           # tools as at 2025-03-15.
@@ -153,8 +136,7 @@ jobs:
         df -h
 
         # Skip checks for Linux/AArch64, given checks for Linux/x86-64
-        if [[ "${{ matrix.os }}" != "ubuntu-24.04-arm" ]]
-        then
+        if [[ "${{ matrix.os }}" != "ubuntu-22.04-arm" ]] ; then
           # Do this in the same step as installing deps to get relevant env var modifications
           stack etc/scripts/release.hs check ${{ matrix.release-args }}
         fi
@@ -174,6 +156,45 @@ jobs:
       with:
         name: ${{ runner.os }}-${{ runner.arch }}
         path: _release/stack-*
+
+  freebsd-x64:
+    name: FreeBSD X64
+    runs-on: [self-hosted, FreeBSD, X64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Install prerequisites
+        run: |
+          sudo sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
+          sudo pkg install -y ghc gcc curl git bash misc/compat10x misc/compat11x misc/compat12x gmake libiconv devel/stack
+          sudo tzsetup Etc/GMT
+          sudo adjkerntz -a
+
+      - uses: haskell/ghcup-setup@v1
+
+      - name: Install stack ghcup hook
+        run: |
+          set -eux
+          ghcup install stack --set latest
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          mkdir -p $STACK_ROOT/hooks/
+          curl https://raw.githubusercontent.com/haskell/ghcup-hs/master/scripts/hooks/stack/ghc-install.sh > $STACK_ROOT/hooks/ghc-install.sh
+          chmod +x $STACK_ROOT/hooks/ghc-install.sh
+          stack config set system-ghc false --global
+
+      - name: Run build
+        run: |
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          export CABAL_DIR="$GITHUB_WORKSPACE/cabal"
+          stack etc/scripts/release.hs build --allow-dirty
+      - name: Upload bindist
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeBSD-X64
+          path: _release/stack-*
 
   github-release:
     name: Create GitHub release
@@ -209,21 +230,21 @@ jobs:
       with:
         name: Linux-ARM64
         path: _release
+    - name: Download FreeBSD/X64 artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: FreeBSD-X64
+        path: _release
     - name: Hash and sign assets
       shell: bash
-      env:
-        RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
       run: |
         set -e
-        echo "$RELEASE_SIGNING_KEY"|gpg --import
         cd _release
         for asset in *; do
           shasum -a 256 "$asset" >"$asset.sha256"
-          gpg --digest-algo=sha512 --detach-sig --armor -u 0x575159689BEFB442 "$asset"
         done
     - name: Create GitHub release (final)
       id: github_release_final
-      if: "!startsWith(github.ref, 'refs/tags/rc/')"
       uses: ncipollo/release-action@v1.13.0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -240,19 +261,7 @@ jobs:
           [INSERT CONTRIBUTORS]
         draft: true
         prerelease: false
-    - name: Create GitHub release (release candidate)
-      id: github_release_rc
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: ncipollo/release-action@v1.13.0
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        body: |
-          **Changes since v[INSERT PREVIOUS VERSION]:**
 
-          [INSERT CHANGELOG]
-        draft: true
-        prerelease: true
     - name: Upload assets to GitHub release (final)
       if: "!startsWith(github.ref, 'refs/tags/rc/')"
       uses: xresloader/upload-to-github-release@v1
@@ -264,14 +273,3 @@ jobs:
         prerelease: false
         overwrite: true
         release_id: ${{ steps.github_release_final.outputs.id }}
-    - name: Upload assets to GitHub release (release candidate)
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: xresloader/upload-to-github-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        file: "_release/*"
-        draft: true
-        prerelease: true
-        overwrite: true
-        release_id: ${{ steps.github_release_rc.outputs.id }}
