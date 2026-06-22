@@ -1,28 +1,15 @@
 name: Integration tests
 
 on:
-  pull_request:
   push:
-    branches:
-    - master
-    - stable
-    - rc/**
     tags:
     - '**'
   workflow_dispatch:
 
-# Stack will use the value of the GH_TOKEN environment variable to authenticate
-# its requests of the GitHub REST API, providing a higher request rate limit.
-env:
-  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-# As of 2026-03-01:
-# * ubuntu-latest comes with Stack 3.9.3 and GHC 9.14.1; and
-# * windows-latest comes with Stack 3.9.1 and GHC 9.14.1.
-# However, macos-15-intel and macos-latest do not come with Haskell tools.
-#
-# windows-latest no longer comes with NSIS 3.10, for which the default value of
-# the 'Unicode' installer attribute is 'true'. However, that is not the
+# As of 2026-01-30, ubuntu-latest and windows-latest come with Stack 3.9.1 and
+# GHC 9.14.1. However, macos-15-intel and macos-latest do not come with Haskell
+# tools. windows-latest no longer comes with NSIS 3.10, for which the default
+# value of the 'Unicode' installer attribute is 'true'. However, that is not the
 # 'large strings' build of NSIS and creates installers that corrupt the PATH
 # environment variable if the default string length of 1024 characters is
 # exceeded.
@@ -35,18 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+        - os: ubuntu-24.04-arm
+          release-args: "--alpine --stack-args --docker-stack-exe=image"
+          cache-bust: "2025-11-05"
         - os: ubuntu-latest
           release-args: "--alpine"
-          cache-bust: "2025-11-05"
-        # On public preview since 16 January 2025
-        - os: ubuntu-24.04-arm
-          # Stack's project-level configuration (stack.yaml) specifies the
-          # multi-architecture (including Linux/Aarch64) Docker image published
-          # by Oliver Benz (@benz0li, on GitHub). That image comes with
-          # Stack 3.9.3. (Note that the online documentation for
-          # '--docker-stack-exe image' specifies that the host Stack and image
-          # Stack must have the same version number.)
-          release-args: "--alpine --stack-args --docker-stack-exe=image"
           cache-bust: "2025-11-05"
         - os: windows-latest
           release-args: ""
@@ -198,6 +178,45 @@ jobs:
         name: ${{ runner.os }}-${{ runner.arch }}
         path: _release/stack-*
 
+  freebsd-x64:
+    name: FreeBSD X64
+    runs-on: [self-hosted, FreeBSD, X64]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Install prerequisites
+        run: |
+          sudo sed -i.bak -e 's/quarterly/latest/' /etc/pkg/FreeBSD.conf
+          sudo pkg install -y ghc gcc curl git bash misc/compat10x misc/compat11x misc/compat12x gmake libiconv devel/stack
+          sudo tzsetup Etc/GMT
+          sudo adjkerntz -a
+
+      - uses: haskell/ghcup-setup@v1
+
+      - name: Install stack ghcup hook
+        run: |
+          set -eux
+          ghcup install stack --set latest
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          mkdir -p $STACK_ROOT/hooks/
+          curl https://raw.githubusercontent.com/haskell/ghcup-hs/master/scripts/hooks/stack/ghc-install.sh > $STACK_ROOT/hooks/ghc-install.sh
+          chmod +x $STACK_ROOT/hooks/ghc-install.sh
+          stack config set system-ghc false --global
+
+      - name: Run build
+        run: |
+          export STACK_ROOT="${GITHUB_WORKSPACE}"/.stack
+          export CABAL_DIR="$GITHUB_WORKSPACE/cabal"
+          stack etc/scripts/release.hs build --allow-dirty
+      - name: Upload bindist
+        uses: actions/upload-artifact@v6
+        with:
+          name: FreeBSD-X64
+          path: _release/stack-*
+
   github-release:
     name: Create GitHub release
     permissions:
@@ -232,17 +251,18 @@ jobs:
       with:
         name: Linux-ARM64
         path: _release
+    - name: Download FreeBSD/X64 artifact
+      uses: actions/download-artifact@v7
+      with:
+        name: FreeBSD-X64
+        path: _release
     - name: Hash and sign assets
       shell: bash
-      env:
-        RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
       run: |
         set -e
-        echo "$RELEASE_SIGNING_KEY"|gpg --import
         cd _release
         for asset in *; do
           shasum -a 256 "$asset" >"$asset.sha256"
-          gpg --digest-algo=sha512 --detach-sig --armor -u 0x575159689BEFB442 "$asset"
         done
     - name: Create GitHub release (final)
       id: github_release_final
@@ -263,19 +283,7 @@ jobs:
           [INSERT CONTRIBUTORS]
         draft: true
         prerelease: false
-    - name: Create GitHub release (release candidate)
-      id: github_release_rc
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: ncipollo/release-action@v1.20.0
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        body: |
-          **Changes since v[INSERT PREVIOUS VERSION]:**
 
-          [INSERT CHANGELOG]
-        draft: true
-        prerelease: true
     - name: Upload assets to GitHub release (final)
       if: "!startsWith(github.ref, 'refs/tags/rc/')"
       uses: xresloader/upload-to-github-release@v1
@@ -287,14 +295,3 @@ jobs:
         prerelease: false
         overwrite: true
         release_id: ${{ steps.github_release_final.outputs.id }}
-    - name: Upload assets to GitHub release (release candidate)
-      if: "startsWith(github.ref, 'refs/tags/rc/')"
-      uses: xresloader/upload-to-github-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        file: "_release/*"
-        draft: true
-        prerelease: true
-        overwrite: true
-        release_id: ${{ steps.github_release_rc.outputs.id }}
